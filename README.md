@@ -1,189 +1,227 @@
-> **Original NetworX database?** See [FIX_THE_3_ERRORS.md](./FIX_THE_3_ERRORS.md).
-> This release fixes missing `posts.user_id` and `connections.requester_id`
-> errors caused by the legacy schema. It keeps your original NetworX tables.
+<div align="center">
 
-# IMPORTANT: Fix Home / Profile / My Network errors
+# 🌐 NetworX — Professional Networking Platform
 
-Start with [`FIX_THE_3_ERRORS.md`](FIX_THE_3_ERRORS.md). Run `npm run repair` **once** on the database used by the running backend. It upgrades existing `users` columns and checks feature tables without deleting accounts.
+**A full-stack social networking application built to explore real-world backend and full-stack concepts: users, connections, posts, messaging, and conversations.**
 
-# NetworX Backend (reconstructed)
+![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)
+![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white)
+![Express](https://img.shields.io/badge/Express-000000?logo=express&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-6DB33F?logo=springboot&logoColor=white)
 
-A Node.js / Express / PostgreSQL API for a professional networking platform. Rebuilt from the surviving `networx-backend.zip`, preserving the existing `/api/auth` contract where possible.
+</div>
 
-## What works
+---
 
-- Signup, login (username **or** email), cookie-based JWT, auth checks, logout, password change
-- User profiles, searches, suggested users, public profiles, skills, images by URL
-- Posts with public/connections-only visibility, feed, likes, comments, create/edit/delete
-- Connection requests, accept/reject, cancellation, remove connection, connection lists
-- Notifications for requests, accepts, likes, comments; mark read/delete
-- Education and work experience CRUD
-- UUID primary keys, PostgreSQL foreign keys, query parameterization, input validation, ownership checks
+## 📖 Overview
 
-**Important:** The original frontend was not provided, so endpoint/JSON compatibility beyond the original auth routes is an approximation. There is no upload service; profile images and post media take HTTP(S) URLs. This is an MVP/backend foundation, not a production security audit. A real PostgreSQL integration test is still needed on your machine.
+NetworX is a social networking application built to explore real-world backend and full-stack concepts such as users, connections, posts, messaging, and conversations. It combines a relational PostgreSQL data model, JWT/session-based authentication, a Redis caching layer for read-heavy workloads, a Java Spring Boot microservice.
 
-## Requirements
+This repository includes the database schema backup required to run the project locally.
 
-- Node.js 20+ (22 recommended)
-- npm
-- PostgreSQL 13+ (local PostgreSQL or Docker)
+## Features
 
-## Set up in five steps
+- **User authentication** with sessions / JWT
+- **Connections**: send connection requests, accept them, and build a network
+- **Posts and comments** with a personalized, paginated feed
+- **Messaging** with conversations and realtime typing indicators
+- **Profiles** with About, Education, and Work sections
+- **Jobs** listing and job / experience details
+- **Redis caching** for feed, profile, and jobs data
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React / Next.js |
+| Backend | Node.js / Express |
+| Database | PostgreSQL |
+| Auth | Sessions / JWT |
+| Microservice | Java Spring Boot |
+| Caching & realtime signals | Redis (since 2 Feb 2026) |
+
+## 🧭 Architecture: Feed Read Path
+
+```mermaid
+flowchart LR
+    A["Client<br/>(React / Next.js)"] --> B["Express API"]
+    B --> C{"Redis<br/>cache hit?"}
+    C -->|"hit (~20 ms)"| D["Return cached feed"]
+    C -->|"miss (~500 ms)"| E["PostgreSQL queries"]
+    E --> F["Spring Boot<br/>microservice"]
+    F --> G["Enriched, paginated feed"]
+    G --> H["Store in Redis<br/>(TTL: 15 min)"]
+    G --> I["Return feed"]
+```
+
+## 📸 Application Screenshots
+
+### 🔐 Login
+Secure login system for users before accessing the portal.
+
+![Login](Screenshots/sign-in.png)
+
+---
+
+### 🏠 Landing Page
+Clean and minimal landing page.
+
+![Home](Screenshots/home-page.png)
+
+---
+
+### 💬 Sign Up
+Users enter details to create an account on the portal.
+
+![Sign up](Screenshots/sign-up.png)
+
+## ⚡ Redis: Caching, Realtime Signals, and Feed Acceleration
+
+From 2 Feb 2026 onwards, Redis is used in NetworX as a high-speed, in-memory layer to reduce PostgreSQL load, accelerate feed reads, and power short-lived realtime signals without writing transient state to the database.
+
+### Why Redis here?
+
+- Feed generation is read-heavy and expensive to recompute (connections → posts → enrichment → pagination).
+- Profile and connection data are reused across many APIs.
+- Realtime UX (for example, typing indicators) should not touch the database.
+- Like counts are frequently read but rarely changed.
+
+### What we cache
+
+| Use case | Key pattern | TTL | Purpose |
+|---|---|---|---|
+| Feed | `feed:connections:{user_id}:{limit}:{offset}` | 15 min | Cache the fully enriched, paginated feed (fan-out-on-read optimization) |
+| User profile | `profile:{user_id}` | 5–10 min | Avoid repeated profile lookups during feed and comment rendering |
+| Profile: About | `profile:about:{user_id}` | 15 min | Reused for profile viewing |
+| Profile: Education | `profile:edu:{user_id}` | 15 min | Reused for profile viewing |
+| Profile: Work | `profile:work:{user_id}` | 15 min | Reused for profile viewing |
+| Jobs | `jobs:{user_id}:{limit}:{offset}` | 15 min | Cache the paginated jobs list |
+
+### Performance benchmarks
+
+| Metric | Without Redis | With Redis (cache hit) |
+|---|---|---|
+| Response time | ~500 ms | **~20 ms** ⚡ |
+| DB queries per request | 2–3 | **0** |
+| Microservice calls per request | 1 | **0** |
+| Improvement | n/a | **~25x faster** |
+
+A cache miss costs about the same as an uncached request (~500 ms) and populates the cache for subsequent requests.
+
+### Optimizing the cache hit rate
+
+- **Use consistent pagination:** encourage standard `limit` values (10, 20, 50).
+- **Monitor cache stats:** track hit/miss ratios.
+- **Adjust TTLs:** balance freshness against performance.
+- **Pre-warm the cache:** cache feeds for active users during off-peak hours.
+
+## 🗄️ Database Setup
+
+The project ships with a PostgreSQL SQL file that defines the **entire database structure** required for the application to run.
+
+**The SQL file contains:**
+
+- Tables
+- Columns and data types
+- Primary keys and foreign keys
+- Indexes
+- Sequences
+- Triggers and functions
+
+> ⚠️ The file may also contain demo/sample data. This is intentional, for development convenience.
+
+### Key tables
+
+| Table | Description |
+|---|---|
+| `users` | User profiles and authentication data |
+| `posts` | User posts |
+| `comments` | Post comments |
+| `connections` | Accepted user connections |
+| `connection_requests` | Pending connection requests |
+| `messages` | Chat messages |
+| `conversations` | User conversations |
+| `education` | Education details |
+| `jobs` | Job / experience details |
+| `session` | Session tracking |
+
+## 🚀 Getting Started (Local Setup)
+
+### Prerequisites
+
+- Node.js
+- PostgreSQL (with `psql` or pgAdmin)
+- Redis and FFmpeg (for the caching and video streaming features)
+
+### 1. Clone the repository
 
 ```bash
-cd networx-backend-rebuilt
+git clone https://github.com/amanbansal1506/NetworX.git
+cd NetworX
+```
+
+### 2. Create a PostgreSQL database
+
+```sql
+CREATE DATABASE NetworX;
+```
+
+### 3. Restore the database schema
+
+**Using `psql`:**
+
+```bash
+psql -U postgres -d NetworX -f NetworX_schema.sql
+```
+
+**Or using pgAdmin:**
+
+1. Create an empty database named `NetworX`.
+2. Right-click the database and select **Restore**.
+3. Select `NetworX_schema.sql`.
+4. Click **Restore**.
+
+### 4. Configure environment variables
+
+Create a `.env` file in the backend root:
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=NetworX
+DB_USER=postgres
+DB_PASSWORD=your_password
+```
+
+### 5. Run the backend
+
+```bash
 npm install
-cp .env.example .env
-```
-
-Edit `.env` to set `DATABASE_URL`, `JWT_SECRET` (at least 32 random characters), and `FRONTEND_URL` (your Next.js app's exact origin, typically `http://localhost:3000`). Generate a strong random secret with:
-
-```bash
-node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
-```
-
-### Option A: Docker for local PostgreSQL (easy)
-
-```bash
-docker compose up -d db
-```
-
-Then put this in `.env`:
-
-```dotenv
-DATABASE_URL=postgresql://networx:networx_local_password@localhost:5432/networx
-```
-
-**Do not use those example Docker credentials in production.** If port 5432 is already in use, stop your other PostgreSQL instance or change the host port and `DATABASE_URL`.
-
-### Option B: PostgreSQL already installed
-
-Create a `networx` database using `createdb networx` (or your PostgreSQL GUI/psql), then set `DATABASE_URL` in `.env` to your own user/password/host/database.
-
-### Initialize + run
-
-```bash
-npm run repair
-npm run check
-npm test
 npm run dev
 ```
 
-Browse `http://localhost:8000/health`: it should respond with `{ "ok": true, "service": "networx-backend" }`.
+> **Note:** The backend and the microservice have their own dedicated repositories. Clone those as well for the complete project to work. This repository will be merged with them once development is complete.
 
-`db:init` adds missing profile columns to existing `users` tables and creates missing feature tables without deleting existing data. `db:doctor` verifies required columns and flags incompatible pre-existing table types. Back up important data before upgrades; do not reset an existing database.
+## 🧠 Notes for Contributors
 
-## Calling it from Next.js
+- The database schema is version-controlled via SQL, not migrations.
+- If you modify the schema, regenerate the SQL backup before committing.
+- For production setups, consider splitting `schema.sql` and `seed.sql`.
 
-Put this in the **frontend** `.env.local`:
+## 📜 License
 
-```dotenv
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
+This project is for educational and learning purposes.
 
-Always send cookies along with frontend requests, for example:
+## 🙌 Acknowledgements
 
-```javascript
-const api = process.env.NEXT_PUBLIC_API_URL;
-const response = await fetch(`${api}/api/auth/user_details`, {
-  credentials: 'include'
-});
-const data = await response.json();
-```
+Inspired by real-world social networking platforms to practice scalable backend and database design.
 
-Signup example:
+## 👤 Author
 
-```javascript
-await fetch(`${api}/api/auth/signup`, {
-  method: 'POST',
-  credentials: 'include',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    username: 'demo_user',
-    full_name: 'Demo User',
-    email: 'demo@example.com',
-    password: 'strong-password-123'
-  })
-});
-```
+**Aman Bansal**
 
-Then login with `POST /api/auth/login` and `{ "username": "demo_user", "password": "strong-password-123" }`. Login sets the `token` HTTP-only cookie for seven days.
-
-## REST API routes
-
-Unless otherwise noted, routes require a valid login cookie (or `Authorization: Bearer <jwt>` for API clients) and return JSON. Most successful responses have `success: true`. UUID route parameters refer to PostgreSQL UUIDs. Pagination supports `?page=1&limit=20`, max limit 50.
-
-| Method | Endpoint | Purpose / body |
-|---|---|---|
-| GET | `/health` | Server health (no login) |
-| POST | `/api/auth/signup` | `{ username, full_name, email, password, type? }` (no login) |
-| POST | `/api/auth/login` | `{ username, password }` (no login) |
-| GET | `/api/auth/check_auth` | `{ isAuthenticated, user }` |
-| GET | `/api/auth/user_details` | `{ success, userData, meta }` (legacy frontend response shape) |
-| POST | `/api/auth/logout` | Clear cookie (no login required) |
-| PATCH | `/api/auth/change-password` | `{ current_password, new_password }` |
-| GET | `/api/users/me` | Current full profile |
-| PATCH | `/api/users/me` | Whitelisted profile attributes only |
-| GET | `/api/users/search?q=...` | Search users by username, name or headline |
-| GET | `/api/users/suggestions` | Users without an existing connection |
-| GET | `/api/users/:usernameOrId` | Public profile and connection state |
-| GET | `/api/users/:usernameOrId/posts` | Posts visible to current user |
-| GET | `/api/feed` | Most recent visible posts |
-| GET | `/api/posts` | Alias of feed |
-| GET | `/api/posts/me` | Your posts |
-| POST | `/api/posts` | `{ content, media_url?, visibility? }` |
-| GET | `/api/posts/:id` | One post |
-| PATCH | `/api/posts/:id` | Edit your post |
-| DELETE | `/api/posts/:id` | Delete your post |
-| POST | `/api/posts/:id/like` | Like a post |
-| DELETE | `/api/posts/:id/like` | Unlike a post |
-| GET | `/api/posts/:id/comments` | Comments |
-| POST | `/api/posts/:id/comments` | `{ content }` |
-| DELETE | `/api/posts/:id/comments/:commentId` | Delete your comment or a comment on your post |
-| GET | `/api/connections` | Accepted connections |
-| GET | `/api/connections/pending?direction=incoming` | Incoming/outgoing requests |
-| POST | `/api/connections/request` | `{ recipient_id }` or `{ username }` |
-| POST | `/api/connections/:usernameOrId/request` | Alternate request form |
-| PATCH | `/api/connections/:id/accept` | Accept an incoming pending request |
-| PATCH | `/api/connections/:id/reject` | Reject an incoming pending request |
-| DELETE | `/api/connections/:id` | Cancel request / remove a connection |
-| GET | `/api/notifications?unread=true` | List notifications plus unread count |
-| PATCH | `/api/notifications/read-all` | Mark all read |
-| PATCH | `/api/notifications/:id/read` | Mark one read |
-| DELETE | `/api/notifications/:id` | Delete one |
-| GET | `/api/profile/experience?user_id=<uuid>` | Work history (default: your own) |
-| POST | `/api/profile/experience` | `{ title, company, location?, start_date?, end_date?, is_current?, description? }` |
-| PATCH | `/api/profile/experience/:id` | Update own experience |
-| DELETE | `/api/profile/experience/:id` | Delete own experience |
-| GET | `/api/profile/education?user_id=<uuid>` | Education (default: your own) |
-| POST | `/api/profile/education` | `{ school, degree?, field_of_study?, start_date?, end_date?, description? }` |
-| PATCH | `/api/profile/education/:id` | Update own education |
-| DELETE | `/api/profile/education/:id` | Delete own education |
-
-### Example API requests (after login)
-
-```javascript
-// Create a post
-await fetch(`${api}/api/posts`, {
-  method: 'POST', credentials: 'include',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ content: 'Hello NetworX!', visibility: 'public' })
-});
-
-// Send a connection request
-await fetch(`${api}/api/connections/request`, {
-  method: 'POST', credentials: 'include',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ username: 'someone_else' })
-});
-```
-
-## Preserved vs added
-
-From the ZIP, these authentication URLs and response keys were preserved: `/api/auth/signup`, `/api/auth/login` (including `user.id`), `/api/auth/check_auth` (`isAuthenticated`, `user`), `/api/auth/user_details` (`userData`, `meta.user_id`), `/api/auth/logout`, cookie named `token`, `user_id` UUID, and server port 8000.
-
-All other endpoints were reconstructed as logical NetworX functionality. If you later provide the frontend code (especially its `fetch`/`axios` calls), its exact API paths, parameter names and JSON response shapes can be reconciled rather than guessed.
-
-## Deployment reminders
-
-Use real HTTPS in production and configure `COOKIE_SECURE=true` and `COOKIE_SAMESITE` for your frontend/backend site relationship (`none` only with HTTPS). Restrict `FRONTEND_URL` to actual trusted origins; comma-separated values are allowed. Use a strong `JWT_SECRET`, avoid logging credentials, configure managed PostgreSQL backups, add a managed rate limiter for public authentication endpoints, CSRF defense appropriate to your deployment, and an object-storage/media-upload service if needed. This build is a usable development baseline but does not include rate limiting, email verification, password reset or real-time messaging.
+[![GitHub](https://img.shields.io/badge/GitHub-amanbansal1506-181717?logo=github&logoColor=white)](https://github.com/amanbansal1506)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-aman--bansal-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/aman-bansal-464b6a270/)
